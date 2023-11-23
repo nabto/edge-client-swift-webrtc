@@ -5,6 +5,11 @@ import NabtoEdgeClient
 import CBORCoding
 import AsyncAlgorithms
 
+protocol EdgeWebRTC {
+    func start(conn: Connection, renderer: RTCVideoRenderer, trackId: String)
+    func stop()
+}
+
 fileprivate struct RTCInfo: Codable {
     let fileStreamPort: UInt32
     let signalingStreamPort: UInt32
@@ -58,7 +63,7 @@ fileprivate struct SDP: Codable {
     let type: String
 }
 
-class EdgeWebRTC: NSObject {
+class EdgeWebRTCImpl: NSObject, EdgeWebRTC {
     private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         //RTCSetMinDebugLogLevel(.info)
@@ -70,6 +75,7 @@ class EdgeWebRTC: NSObject {
     
     private var isStarted = false
     private var renderer: RTCVideoRenderer!
+    private var trackId: String = "frontdoor-video"
     
     // Tasks
     private var messageLoop: Task<(), Never>? = nil
@@ -98,7 +104,7 @@ class EdgeWebRTC: NSObject {
         stop()
     }
     
-    func start(conn: Connection, renderer: RTCVideoRenderer) {
+    func start(conn: Connection, renderer: RTCVideoRenderer, trackId: String) {
         if isStarted {
             debugPrint("NabtoRTC.start was called but its already started.")
             return
@@ -106,6 +112,7 @@ class EdgeWebRTC: NSObject {
         isStarted = true
         
         self.renderer = renderer
+        self.trackId = trackId
         startSignalingStream(conn)
         startLoops()
     }
@@ -241,7 +248,7 @@ class EdgeWebRTC: NSObject {
                     type: .offer,
                     data: offer.toJSON(),
                     metadata: SignalMessageMetadata(
-                        tracks: [SignalMessageMetadataTrack(mid: "0", trackId: "frontdoor-video")],
+                        tracks: [SignalMessageMetadataTrack(mid: "0", trackId: self.trackId)],
                         noTrickle: false
                     )
                 )
@@ -328,7 +335,7 @@ extension RTCIceCandidate {
 
 
 // MARK: RTCPeerConnectionDelegate implementation
-extension EdgeWebRTC: RTCPeerConnectionDelegate {
+extension EdgeWebRTCImpl: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
         print("NabtoRTC: Signaling state changed to \((try? stateChanged.description()) ?? "invalid RTCSignalingState")")
     }
@@ -373,7 +380,7 @@ extension EdgeWebRTC: RTCPeerConnectionDelegate {
 }
 
 // MARK: Nabto device signaling
-extension EdgeWebRTC {
+extension EdgeWebRTCImpl {
     private func readSignalMessage(_ stream: NabtoEdgeClient.Stream) async throws -> SignalMessage {
         let lenData = try await withCheckedThrowingContinuation { continuation in
             deviceStream!.readAllAsync(length: 4) { err, data in
