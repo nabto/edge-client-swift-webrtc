@@ -8,26 +8,13 @@
 import Foundation
 import WebRTC
 import NabtoEdgeClient
-
-/*
- // video track
- let videoSource = Self.factory.videoSource()
- let videoTrack = Self.factory.videoTrack(with: videoSource, trackId: "video0")
- self.peerConnection!.add(videoTrack, streamIds: [streamId])
- self.remoteVideoTrack = self.peerConnection!.transceivers.first { $0.mediaType == .video }?.receiver.track as? RTCVideoTrack
- self.remoteVideoTrack?.add(renderer)
- */
-
-
-protocol EdgePeerConnection {
-    func addTrack(track: EdgeVideoTrack)
-}
+import os
 
 internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     private var peerConnection: RTCPeerConnection?
     private let signaling: EdgeSignaling
     private let jsonDecoder = JSONDecoder()
-    private var tracks: [EdgeVideoTrack] = []
+    private var tracks: [EdgeVideoTrackImpl] = []
     
     // @TODO: Figure out what stream Ids are used for in WebRTC.
     private let streamId = "stream"
@@ -50,9 +37,13 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         }
     }
     
-    func addTrack(track: EdgeVideoTrack) {
+    func addVideoTrack(track: EdgeVideoTrack) {
         // @TODO: Add the track immediately if peerConnection is online?
-        tracks.append(track)
+        tracks.append(track as! EdgeVideoTrackImpl)
+    }
+    
+    func addAudioTrack(track: EdgeAudioTrack) {
+        // @TODO: Implement audio tracks
     }
     
     private func createOffer(_ pc: RTCPeerConnection) async -> RTCSessionDescription {
@@ -74,7 +65,18 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         self.peerConnection = peerConnection
         
         for track in tracks {
-            self.peerConnection?.add(track.track, streamIds: [streamId])
+            // @TODO
+            let rtpSender = self.peerConnection!.add(track.track, streamIds: [streamId])
+            let pcTrack = self.peerConnection!.transceivers.first {
+                $0.mediaType == .video
+            }?.receiver.track as? RTCVideoTrack
+            
+            if let pcTrack = pcTrack {
+                track.setPeerConnectionTrack(pcTrack)
+            } else {
+                // @TODO: Error handling
+                NSLog("Failed to add track")
+            }
         }
     }
     
@@ -94,7 +96,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                     let sdp = RTCSessionDescription(type: RTCSdpType.answer, sdp: answer.sdp)
                     try await self.peerConnection!.setRemoteDescription(sdp)
                 } catch {
-                    debugPrint("NabtoRTC: Failed handling ANSWER message \(error)")
+                    NSLog("NabtoRTC: Failed handling ANSWER message \(error)")
                 }
                 break
                 
@@ -107,7 +109,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                         sdpMid: cand.sdpMid
                     ))
                 } catch {
-                    debugPrint("NabtoRTC: Failed handling ICE candidate message \(error)")
+                    NSLog("NabtoRTC: Failed handling ICE candidate message \(error)")
                 }
                 break
                 
@@ -140,19 +142,19 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                     data: offer.toJSON(),
                     metadata: SignalMessageMetadata(
                         // @TODO: We should build a proper structure of all the tracks. Right now we are just faking it with the first track.
-                        tracks: [SignalMessageMetadataTrack(mid: "0", trackId: self.tracks[0].remoteTrackId)],
+                        tracks: [SignalMessageMetadataTrack(mid: "0", trackId: "frontdoor-video")],
                         noTrickle: false
                     )
                 )
                 
                 await signaling.send(msg)
                 do { try await peerConnection!.setLocalDescription(offer) } catch {
-                    debugPrint("NabtoRTC: Failed setting peer connection local description \(error)")
+                    NSLog("NabtoRTC: Failed setting peer connection local description \(error)")
                 }
                 break
                 
             default:
-                print("Unexpected signaling message of type: \(msg.type)")
+                NSLog("Unexpected signaling message of type: \(msg.type)")
                 break
             }
         }
@@ -162,31 +164,32 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
 // MARK: RTCPeerConnectionDelegate implementation
 extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
-        print("NabtoRTC: Signaling state changed to \((try? stateChanged.description()) ?? "invalid RTCSignalingState")")
+        NSLog("NabtoRTC: Signaling state changed to \((try? stateChanged.description()) ?? "invalid RTCSignalingState")")
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
-        print("NabtoRTC: New RTCMediaStream \(stream.streamId) added")
+        NSLog("NabtoRTC: New RTCMediaStream \(stream.streamId) added")
+        print(stream.videoTracks.first?.description)
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
-        print("NabtoRTC: RTCMediaStream \(stream.streamId) removed")
+        NSLog("NabtoRTC: RTCMediaStream \(stream.streamId) removed")
     }
     
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
-        print("NabtoRTC: Peer connection should negotiate")
+        NSLog("NabtoRTC: Peer connection should negotiate")
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        print("NabtoRTC: ICE connection state changed to: \((try? newState.description()) ?? "invalid RTCIceConnectionState")")
+        NSLog("NabtoRTC: ICE connection state changed to: \((try? newState.description()) ?? "invalid RTCIceConnectionState")")
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-        print("NabtoRTC: ICE gathering state changed to: \((try? newState.description()) ?? "invalid RTCIceGatheringState")")
+        NSLog("NabtoRTC: ICE gathering state changed to: \((try? newState.description()) ?? "invalid RTCIceGatheringState")")
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        print("NabtoRTC: New ICE candidate generated: \(candidate.sdp)")
+        NSLog("NabtoRTC: New ICE candidate generated: \(candidate.sdp)")
         Task {
             await signaling.send(SignalMessage(
                 type: .iceCandidate,
@@ -196,10 +199,10 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
-        print("NabtoRTC: ICE candidate removed")
+        NSLog("NabtoRTC: ICE candidate removed")
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen candidate: RTCDataChannel) {
-        print("NabtoRTC: Data channel opened")
+        NSLog("NabtoRTC: Data channel opened")
     }
 }

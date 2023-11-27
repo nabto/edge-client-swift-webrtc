@@ -62,7 +62,7 @@ internal extension RTCIceCandidate {
 }
 
 internal extension RTCSignalingState {
-    public func description() throws -> String {
+    func description() throws -> String {
         switch self {
         case .closed:
             return "closed"
@@ -83,7 +83,7 @@ internal extension RTCSignalingState {
 }
 
 internal extension RTCIceGatheringState {
-    public func description() throws -> String {
+    func description() throws -> String {
         switch self {
         case .complete:
             return "complete"
@@ -98,7 +98,7 @@ internal extension RTCIceGatheringState {
 }
 
 internal extension RTCIceConnectionState {
-    public func description() throws -> String {
+    func description() throws -> String {
         switch self {
         case .new:
              return "new"

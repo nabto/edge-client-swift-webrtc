@@ -20,30 +20,30 @@ fileprivate struct RTCInfo: Codable {
     }
 }
 
-struct TurnServer: Codable {
+public struct TurnServer: Codable {
     let hostname: String
     let port: Int
     let username: String
     let password: String
 }
 
-struct IceCandidate: Codable {
+public struct IceCandidate: Codable {
     let candidate: String
     let sdpMid: String
     let sdpMLineIndex: Int?
 }
 
-struct SignalMessageMetadataTrack: Codable {
+public struct SignalMessageMetadataTrack: Codable {
     let mid: String
     let trackId: String
 }
 
-struct SignalMessageMetadata: Codable {
+public struct SignalMessageMetadata: Codable {
     let tracks: [SignalMessageMetadataTrack]
     let noTrickle: Bool
 }
 
-enum SignalMessageType: Int, Codable {
+public enum SignalMessageType: Int, Codable {
     case offer = 0
     case answer = 1
     case iceCandidate = 2
@@ -51,26 +51,26 @@ enum SignalMessageType: Int, Codable {
     case turnResponse = 4
 }
 
-struct SignalMessage: Codable {
+public struct SignalMessage: Codable {
     let type: SignalMessageType
     var data: String? = nil
     var servers: [TurnServer]? = nil
     var metadata: SignalMessageMetadata? = nil
 }
 
-struct SDP: Codable {
+public struct SDP: Codable {
     let sdp: String
     let type: String
 }
 
-protocol EdgeSignaling {
+public protocol EdgeSignaling {
     func send(_ msg: SignalMessage) async
     func recv() async throws -> SignalMessage
 }
 
 // @TODO: Catch and convert errors to our own type of errors?
-class EdgeStreamSignaling: EdgeSignaling {
-    private let stream: NabtoEdgeClient.Stream
+public class EdgeStreamSignaling: EdgeSignaling {
+    private let stream: NabtoEdgeClient.Stream!
     private let messageChannel = AsyncChannel<SignalMessage>()
     
     private let cborDecoder = CBORDecoder()
@@ -82,7 +82,7 @@ class EdgeStreamSignaling: EdgeSignaling {
         let coapResult = try coap.execute()
         
         if coapResult.status != 205 {
-            print("Unexpected /webrtc/info return code \(coapResult.status)")
+            NSLog("Unexpected /webrtc/info return code \(coapResult.status)")
         }
         
         let rtcInfo = try cborDecoder.decode(RTCInfo.self, from: coapResult.payload)
@@ -96,17 +96,17 @@ class EdgeStreamSignaling: EdgeSignaling {
                 } catch {
                     // @TODO: Check if the error pertains to the stream
                     //        e.g. if the stream is closed, we should invalidate this EdgeSignaling object.
-                    debugPrint("Failed to send signaling message: \(error)")
+                    NSLog("Failed to send signaling message: \(error)")
                 }
             }
         }
     }
     
-    func send(_ msg: SignalMessage) async {
+    public func send(_ msg: SignalMessage) async {
         await messageChannel.send(msg)
     }
     
-    func recv() async throws -> SignalMessage {
+    public func recv() async throws -> SignalMessage {
         return try await readSignalMessage()
     }
     

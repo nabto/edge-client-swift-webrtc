@@ -9,25 +9,25 @@ import Foundation
 import NabtoEdgeClient
 import WebRTC
 
-class EdgeWebRTC {
+public class EdgeWebRTC {
     private init() {}
     
     internal static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         //RTCSetMinDebugLogLevel(.info)
-        //RTCEnableMetrics()
+        //RTCEnableMetrics(
         let videoEncoderFactory = RTCDefaultVideoEncoderFactory()
         let videoDecoderFactory = RTCDefaultVideoDecoderFactory()
         return RTCPeerConnectionFactory(encoderFactory: videoEncoderFactory, decoderFactory: videoDecoderFactory)
     }()
     
-    static func createVideoTrack(localTrackId: String, remoteTrackId: String) -> EdgeVideoTrack {
+    public static func createVideoTrack(localTrackId: String, remoteTrackId: String) -> EdgeVideoTrack {
         let videoSource = Self.factory.videoSource()
         let videoTrack = Self.factory.videoTrack(with: videoSource, trackId: localTrackId)
-        return EdgeVideoTrack(track: videoTrack, localTrackId: localTrackId, remoteTrackId: remoteTrackId)
+        return EdgeVideoTrackImpl(track: videoTrack, localTrackId: localTrackId, remoteTrackId: remoteTrackId)
     }
     
-    static func createPeerConnection(_ connection: Connection) -> EdgePeerConnection {
+    public static func createPeerConnection(_ connection: Connection) -> EdgePeerConnection {
         return EdgePeerConnectionImpl(connection)
     }
 }

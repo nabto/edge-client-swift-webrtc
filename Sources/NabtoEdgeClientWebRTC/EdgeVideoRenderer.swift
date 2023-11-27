@@ -8,10 +8,28 @@
 import Foundation
 import WebRTC
 
-protocol EdgeVideoRenderer: RTCVideoRenderer {
+public protocol EdgeVideoRenderer: RTCVideoRenderer {
 
 }
 
-class EdgeMetalVideoView: RTCMTLVideoView, EdgeVideoRenderer {
-    
+public class EdgeMetalVideoView: RTCMTLVideoView, EdgeVideoRenderer {
+    public func embed(into container: UIView) {
+        container.addSubview(self)
+        self.translatesAutoresizingMaskIntoConstraints = false
+        container.addConstraints(NSLayoutConstraint.constraints(
+            withVisualFormat: "H:|[view]|",
+            options: [],
+            metrics: nil,
+            views: ["view": self]
+        ))
+        
+        container.addConstraints(NSLayoutConstraint.constraints(
+            withVisualFormat: "V:|[view]|",
+            options: [],
+            metrics: nil,
+            views: ["view": self]
+        ))
+        
+        container.layoutIfNeeded()
+    }
 }
