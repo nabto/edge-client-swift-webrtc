@@ -11,11 +11,9 @@ import CBORCoding
 import AsyncAlgorithms
 
 fileprivate struct RTCInfo: Codable {
-    let fileStreamPort: UInt32
     let signalingStreamPort: UInt32
     
     enum CodingKeys: String, CodingKey {
-        case fileStreamPort = "FileStreamPort"
         case signalingStreamPort = "SignalingStreamPort"
     }
 }
@@ -39,8 +37,8 @@ public struct SignalMessageMetadataTrack: Codable {
 }
 
 public struct SignalMessageMetadata: Codable {
-    let tracks: [SignalMessageMetadataTrack]
-    let noTrickle: Bool
+    let tracks: [SignalMessageMetadataTrack]?
+    let noTrickle: Bool?
 }
 
 public enum SignalMessageType: Int, Codable {
@@ -77,12 +75,13 @@ public class EdgeStreamSignaling: EdgeSignaling {
     private let jsonEncoder = JSONEncoder()
     private let jsonDecoder = JSONDecoder()
     
-    init(_ conn: Connection) throws {
+    public init(_ conn: Connection) throws {
         let coap = try conn.createCoapRequest(method: "GET", path: "/webrtc/info")
         let coapResult = try coap.execute()
         
         if coapResult.status != 205 {
-            NSLog("Unexpected /webrtc/info return code \(coapResult.status)")
+            // @TODO: Throw an error here, if we dont the library will crash when it tries to decode a nonexistent payload
+            EdgeLogger.error("Unexpected /webrtc/info return code \(coapResult.status)")
         }
         
         let rtcInfo = try cborDecoder.decode(RTCInfo.self, from: coapResult.payload)
@@ -96,7 +95,7 @@ public class EdgeStreamSignaling: EdgeSignaling {
                 } catch {
                     // @TODO: Check if the error pertains to the stream
                     //        e.g. if the stream is closed, we should invalidate this EdgeSignaling object.
-                    NSLog("Failed to send signaling message: \(error)")
+                    EdgeLogger.error("Failed to send signaling message: \(error)")
                 }
             }
         }

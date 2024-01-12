@@ -1,19 +1,24 @@
 import Foundation
+import WebRTC
 
 public protocol EdgeMediaTrack {
-    var localTrackId: String { get }
-    var remoteTrackId: String { get }
 }
 
 public protocol EdgeVideoTrack: EdgeMediaTrack {
-    func addRenderTarget(_ renderer: EdgeVideoRenderer)
+    func add(_ renderer: EdgeVideoRenderer)
+    func remove(_ renderer: EdgeVideoRenderer)
 }
 
 public protocol EdgeAudioTrack: EdgeMediaTrack {
     // @TODO: Implement audio tracks
 }
 
+public typealias EdgeOnTrackCallback = (EdgeMediaTrack) -> ()
+public typealias EdgeOnConnectedCallback = () -> ()
+public typealias EdgeOnClosedCallback = () -> ()
+
 public protocol EdgePeerConnection {
-    func addVideoTrack(track: EdgeVideoTrack)
-    func addAudioTrack(track: EdgeAudioTrack)
+    var onTrack: EdgeOnTrackCallback? { get set }
+    var onConnected: EdgeOnConnectedCallback? { get set }
+    var onClosed: EdgeOnClosedCallback? { get set }
 }
