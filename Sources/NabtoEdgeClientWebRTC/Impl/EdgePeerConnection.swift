@@ -172,9 +172,11 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
         if let track = track {
             switch (track) {
             case is RTCVideoTrack:
-                self.onTrack?(EdgeVideoTrackImpl(track: track as! RTCVideoTrack))
+                let videoTrack = track as! RTCVideoTrack
+                self.onTrack?(EdgeVideoTrackImpl(track: videoTrack))
             case is RTCAudioTrack:
-                // @TODO: Audio track support
+                let audioTrack = track as! RTCAudioTrack
+                self.onTrack?(EdgeAudioTrackImpl(track: audioTrack))
                 break
             default:
                 EdgeLogger.error("Track \(track.trackId) was not a video or audio track.")
