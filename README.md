@@ -24,3 +24,9 @@ To install with Swift Package Manager add the following line to your `Package.sw
 ```swift
 .package(url: "https://github.com/nabto/edge-client-swift-webrtc", .branch("main"))
 ```
+
+## License
+Following is a list of third party distributions that are used in this library and their license.
+* [stasel/WebRTC](https://github.com/stasel/WebRTC): BSD 3-Clause License
+* [WebRTC](https://webrtc.org/support/license): WebRTC Software License
+* [swift-async-algorithms](https://github.com/apple/swift-async-algorithms): Apache 2.0 License
