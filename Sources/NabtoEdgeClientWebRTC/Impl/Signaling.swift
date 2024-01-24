@@ -84,8 +84,19 @@ public class EdgeStreamSignaling: EdgeSignaling {
             EdgeLogger.error("Unexpected /webrtc/info return code \(coapResult.status)")
         }
         
-        let rtcInfo = try cborDecoder.decode(RTCInfo.self, from: coapResult.payload)
+        var rtcInfo: RTCInfo
         self.stream = try conn.createStream()
+        
+        if coapResult.contentFormat == 50 {
+            rtcInfo = try jsonDecoder.decode(RTCInfo.self, from: coapResult.payload)
+        } else if coapResult.contentFormat == 60 {
+            rtcInfo = try cborDecoder.decode(RTCInfo.self, from: coapResult.payload)
+        } else {
+            EdgeLogger.error("/webrtc/info returned invalid content format \(String(describing: coapResult.contentFormat))")
+            try self.stream.close()
+            return
+        }
+        
         try self.stream.open(streamPort: rtcInfo.signalingStreamPort)
         
         Task {
