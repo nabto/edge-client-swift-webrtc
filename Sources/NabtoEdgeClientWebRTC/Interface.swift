@@ -21,4 +21,6 @@ public protocol EdgePeerConnection {
     var onTrack: EdgeOnTrackCallback? { get set }
     var onConnected: EdgeOnConnectedCallback? { get set }
     var onClosed: EdgeOnClosedCallback? { get set }
+    
+    func close()
 }

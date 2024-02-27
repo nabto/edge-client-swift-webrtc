@@ -33,6 +33,15 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         }
     }
     
+    deinit {
+        close()
+    }
+    
+    func close() {
+        signaling.close()
+        peerConnection?.close()
+    }
+    
     private func createOffer(_ pc: RTCPeerConnection) async -> RTCSessionDescription {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         return await withCheckedContinuation { continuation in
@@ -70,6 +79,12 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
             var msg: SignalMessage? = nil
             do {
                 msg = try await signaling.recv()
+            } catch NabtoEdgeClientError.EOF {
+                EdgeLogger.error("Signaling stream is EOF!")
+                break
+            } catch NabtoEdgeClientError.STOPPED {
+                EdgeLogger.error("Signaling stream is STOPPED!")
+                break
             } catch {
                 EdgeLogger.error("Failed to receive signaling message: \(error)")
                 msg = nil

@@ -64,6 +64,7 @@ public struct SDP: Codable {
 public protocol EdgeSignaling {
     func send(_ msg: SignalMessage) async
     func recv() async throws -> SignalMessage
+    func close()
 }
 
 // @TODO: Catch and convert errors to our own type of errors?
@@ -112,12 +113,24 @@ public class EdgeStreamSignaling: EdgeSignaling {
         }
     }
     
+    deinit {
+        close()
+    }
+    
     public func send(_ msg: SignalMessage) async {
         await messageChannel.send(msg)
     }
     
     public func recv() async throws -> SignalMessage {
         return try await readSignalMessage()
+    }
+    
+    public func close() {
+        stream.closeAsync { err in
+            if err != .OK {
+                EdgeLogger.error("Could not shut down signaling stream: \(err)")
+            }
+        }
     }
     
     private func readSignalMessage() async throws -> SignalMessage {
