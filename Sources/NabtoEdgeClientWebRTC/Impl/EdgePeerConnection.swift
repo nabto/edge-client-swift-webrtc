@@ -14,32 +14,40 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     var onConnected: EdgeOnConnectedCallback? = nil
     var onClosed: EdgeOnClosedCallback? = nil
     var onTrack: EdgeOnTrackCallback? = nil
+    var onError: EdgeOnErrorCallback? = nil
     
     private var peerConnection: RTCPeerConnection?
-    private let signaling: EdgeSignaling
+    private var signaling: EdgeSignaling!
     private let jsonDecoder = JSONDecoder()
-    
-    init(_ conn: Connection) {
-        do {
-            self.signaling = try EdgeStreamSignaling(conn)
-        } catch {
-            // @TODO: throw an error instead of crashing with fatalError
-            fatalError("Failed to create signaling stream \(error)")
-        }
-        super.init()
-        
-        Task {
-            await messageLoop()
-        }
-    }
+    private var conn: Connection?
     
     deinit {
         close()
     }
     
+    init(_ conn: Connection) {
+        super.init()
+        self.conn = conn
+    }
+    
+    func connect() async throws {
+        self.signaling = await try EdgeStreamSignaling(conn!)
+        Task {
+            await messageLoop()
+        }
+    }
+    
     func close() {
         signaling.close()
         peerConnection?.close()
+        self.conn = nil
+    }
+    
+    private func error(_ err: EdgeWebRTCError, _ msg: String?) {
+        if let msg = msg {
+            EdgeLogger.error(msg)
+        }
+        self.onError?(err)
     }
     
     private func createOffer(_ pc: RTCPeerConnection) async -> RTCSessionDescription {
@@ -80,13 +88,13 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
             do {
                 msg = try await signaling.recv()
             } catch NabtoEdgeClientError.EOF {
-                EdgeLogger.error("Signaling stream is EOF!")
+                EdgeLogger.info("Signaling stream is EOF! Closing message loop.")
                 break
             } catch NabtoEdgeClientError.STOPPED {
-                EdgeLogger.error("Signaling stream is STOPPED!")
+                EdgeLogger.info("Signaling stream is STOPPED! Closing message loop.")
                 break
             } catch {
-                EdgeLogger.error("Failed to receive signaling message: \(error)")
+                self.error(.signalingFailedRecv, "Failed to receive signaling message: \(error)")
                 msg = nil
             }
             
@@ -103,7 +111,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                     let sdp = RTCSessionDescription(type: RTCSdpType.answer, sdp: answer.sdp)
                     try await self.peerConnection!.setRemoteDescription(sdp)
                 } catch {
-                    EdgeLogger.error("Failed handling ANSWER message: \(error)")
+                    self.error(.setRemoteDescriptionError, "Failed handling ANSWER message: \(error)")
                 }
                 break
                 
@@ -113,7 +121,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                     let sdp = RTCSessionDescription(type: RTCSdpType.offer, sdp: offer.sdp)
                     try await self.peerConnection!.setRemoteDescription(sdp)
                 } catch {
-                    EdgeLogger.error("Failed handling OFFER message: \(error)")
+                    self.error(.setRemoteDescriptionError, "Failed handling OFFER message: \(error)")
                 }
                 
                 do {
@@ -122,7 +130,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                     let msg = SignalMessage(type: .answer, data: answer.toJSON())
                     await signaling.send(msg)
                 } catch {
-                    EdgeLogger.error("Failed sending an answer to offer message: \(error)")
+                    self.error(.sendAnswerError, "Failed sending an answer to offer message: \(error)")
                 }
                 
             case .iceCandidate:
@@ -134,14 +142,13 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                         sdpMid: cand.sdpMid
                     ))
                 } catch {
-                    EdgeLogger.error("Failed handling ICE candidate message: \(error)")
+                    self.error(.iceCandidateError, "Failed handling ICE candidate message: \(error)")
                 }
                 break
                 
             case .turnResponse:
                 guard let turnServers = msg.servers else {
-                    // @TODO: Return an error to the library user
-                    EdgeLogger.error("Received a TURN response message without any servers listed.")
+                    self.error(.connectionInitError, "Received a TURN response message without any servers listed.")
                     break
                 }
                 
@@ -164,7 +171,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                 break
                 
             default:
-                EdgeLogger.warning("Signaling message had unexpected type: \(msg.type)")
+                self.error(.signalingInvalidMessage, "Signaling message had unexpected type: \(msg.type)")
                 break
             }
         }
@@ -194,6 +201,7 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
                 self.onTrack?(EdgeAudioTrackImpl(track: audioTrack))
                 break
             default:
+                // This code path is unreachable
                 EdgeLogger.error("Track \(track.trackId) was not a video or audio track.")
             }
         }

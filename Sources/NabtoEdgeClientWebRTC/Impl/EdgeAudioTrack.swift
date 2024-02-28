@@ -14,4 +14,12 @@ public class EdgeAudioTrackImpl: EdgeAudioTrack {
     internal init(track: RTCAudioTrack) {
         self.track = track
     }
+    
+    public func setVolume(_ volume: Double) {
+        self.track.source.volume = volume
+    }
+    
+    public func setEnabled(_ enabled: Bool) {
+        self.track.isEnabled = enabled
+    }
 }

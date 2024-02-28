@@ -76,13 +76,13 @@ public class EdgeStreamSignaling: EdgeSignaling {
     private let jsonEncoder = JSONEncoder()
     private let jsonDecoder = JSONDecoder()
     
-    public init(_ conn: Connection) throws {
+    public init(_ conn: Connection) async throws {
         let coap = try conn.createCoapRequest(method: "GET", path: "/webrtc/info")
-        let coapResult = try coap.execute()
+        let coapResult = await try coap.executeAsync()
         
         if coapResult.status != 205 {
-            // @TODO: Throw an error here, if we dont the library will crash when it tries to decode a nonexistent payload
-            EdgeLogger.error("Unexpected /webrtc/info return code \(coapResult.status)")
+            EdgeLogger.error("Unexpected /webrtc/info return code \(coapResult.status). Failed to initialize signaling service.")
+            throw EdgeWebRTCError.signalingFailedToInitialize
         }
         
         var rtcInfo: RTCInfo
@@ -95,21 +95,27 @@ public class EdgeStreamSignaling: EdgeSignaling {
         } else {
             EdgeLogger.error("/webrtc/info returned invalid content format \(String(describing: coapResult.contentFormat))")
             try self.stream.close()
-            return
+            throw EdgeWebRTCError.signalingFailedToInitialize
         }
         
-        try self.stream.open(streamPort: rtcInfo.signalingStreamPort)
+        await try self.stream.openAsync(streamPort: rtcInfo.signalingStreamPort)
         
         Task {
             for await msg in messageChannel {
                 do {
                     try await writeSignalMessage(msg: msg)
+                } catch NabtoEdgeClientError.EOF {
+                    EdgeLogger.error("Signaling stream is EOF! Closing signaling service.")
+                    break
+                } catch NabtoEdgeClientError.STOPPED {
+                    EdgeLogger.error("Signaling stream is STOPPED! Closing signaling service.")
+                    break
                 } catch {
-                    // @TODO: Check if the error pertains to the stream
-                    //        e.g. if the stream is closed, we should invalidate this EdgeSignaling object.
                     EdgeLogger.error("Failed to send signaling message: \(error)")
                 }
             }
+            
+            close()
         }
     }
     
@@ -128,7 +134,7 @@ public class EdgeStreamSignaling: EdgeSignaling {
     public func close() {
         stream.closeAsync { err in
             if err != .OK {
-                EdgeLogger.error("Could not shut down signaling stream: \(err)")
+                EdgeLogger.info("Attempting to shut down signaling stream yielded error: \(err)")
             }
         }
     }
