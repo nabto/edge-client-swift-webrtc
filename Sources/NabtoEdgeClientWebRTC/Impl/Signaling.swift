@@ -78,7 +78,7 @@ public class EdgeStreamSignaling: EdgeSignaling {
 
     public init(_ conn: Connection) async throws {
         let coap = try conn.createCoapRequest(method: "GET", path: "/p2p/webrtc-info")
-        let coapResult = await try coap.executeAsync()
+        let coapResult = try await coap.executeAsync()
 
         if coapResult.status != 205 {
             EdgeLogger.error("Unexpected /p2p/webrtc-info return code \(coapResult.status). Failed to initialize signaling service.")
@@ -98,7 +98,7 @@ public class EdgeStreamSignaling: EdgeSignaling {
             throw EdgeWebRTCError.signalingFailedToInitialize
         }
 
-        await try self.stream.openAsync(streamPort: rtcInfo.signalingStreamPort)
+        try await self.stream.openAsync(streamPort: rtcInfo.signalingStreamPort)
 
         Task {
             for await msg in messageChannel {
