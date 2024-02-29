@@ -21,6 +21,11 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     private let jsonDecoder = JSONDecoder()
     private var conn: Connection?
     
+    private var isPolite = true
+    private var isMakingOffer = false
+    private var ignoreOffer = false
+    
+    
     deinit {
         close()
     }
@@ -31,7 +36,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     }
     
     func connect() async throws {
-        self.signaling = await try EdgeStreamSignaling(conn!)
+        self.signaling = try await EdgeStreamSignaling(conn!)
         Task {
             await messageLoop()
         }
@@ -66,6 +71,47 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
             pc.answer(for: constraints) { (sdp, error) in
                 guard let sdp = sdp else { return }
                 continuation.resume(returning: sdp)
+            }
+        }
+    }
+    
+    private func sendDescription(_ description: RTCSessionDescription) async throws {
+        let type = description.type == .answer ? SignalMessageType.answer : SignalMessageType.offer
+        let msg = SignalMessage(type: type, data: description.toJSON())
+        await signaling.send(msg)
+    }
+    
+    private func handleDescription(_ description: RTCSessionDescription?) async {
+        guard let description = description else {
+            EdgeLogger.error("SDP is nil in handleDescription. Ensure your signaling is functional!")
+            return
+        }
+        
+        guard let pc = peerConnection else {
+            EdgeLogger.error("handleDescription failed: peer connection is not open.")
+            return
+        }
+        
+        let offerCollision = description.type == .offer && (isMakingOffer || pc.signalingState == .stable)
+        ignoreOffer = !isPolite && offerCollision
+        
+        if ignoreOffer {
+            EdgeLogger.info("Ignoring offer...")
+            return
+        }
+        
+        do {
+            try await pc.setRemoteDescription(description)
+        } catch {
+            self.error(.setRemoteDescriptionError, "Setting remote SDP failed: \(error)")
+        }
+        
+        if pc.remoteDescription?.type == .offer {
+            do {
+                try await pc.setLocalDescription()
+                try await sendDescription(pc.localDescription!)
+            } catch {
+                self.error(.sendAnswerError, "Failed sending an answer to offer message: \(error)")
             }
         }
     }
@@ -109,7 +155,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                 do {
                     let answer = try jsonDecoder.decode(SDP.self, from: msg.data!.data(using: .utf8)!)
                     let sdp = RTCSessionDescription(type: RTCSdpType.answer, sdp: answer.sdp)
-                    try await self.peerConnection!.setRemoteDescription(sdp)
+                    await handleDescription(sdp)
                 } catch {
                     self.error(.setRemoteDescriptionError, "Failed handling ANSWER message: \(error)")
                 }
@@ -119,18 +165,9 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                 do {
                     let offer = try jsonDecoder.decode(SDP.self, from: msg.data!.data(using: .utf8)!)
                     let sdp = RTCSessionDescription(type: RTCSdpType.offer, sdp: offer.sdp)
-                    try await self.peerConnection!.setRemoteDescription(sdp)
+                    await handleDescription(sdp)
                 } catch {
                     self.error(.setRemoteDescriptionError, "Failed handling OFFER message: \(error)")
-                }
-                
-                do {
-                    let answer = await createAnswer(self.peerConnection!)
-                    try await self.peerConnection!.setLocalDescription(answer)
-                    let msg = SignalMessage(type: .answer, data: answer.toJSON())
-                    await signaling.send(msg)
-                } catch {
-                    self.error(.sendAnswerError, "Failed sending an answer to offer message: \(error)")
                 }
                 
             case .iceCandidate:
@@ -212,7 +249,22 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
     }
     
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
-        EdgeLogger.info("Peer connection should negotiate")
+        EdgeLogger.info("Peer connection should renegotiate")
+        Task {
+            defer {
+                isMakingOffer = false
+            }
+            
+            do {
+                isMakingOffer = true
+                try await peerConnection.setLocalDescription()
+                try await sendDescription(peerConnection.localDescription!)
+            } catch {
+                EdgeLogger.error("Renegotiation failed to create and send a local description: \(error)")
+            }
+            
+            isMakingOffer = false
+        }
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
