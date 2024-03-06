@@ -115,6 +115,10 @@ public typealias EdgeOnConnectedCallback = () -> ()
  */
 public typealias EdgeOnErrorCallback = (EdgeWebRTCError) -> ()
 
+
+/**
+ * Main Connection interface used to connect to a device and interact with it.
+ */
 public protocol EdgePeerConnection {
 
     /**
