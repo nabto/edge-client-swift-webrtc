@@ -82,7 +82,7 @@ public class EdgeStreamSignaling: EdgeSignaling {
 
         if coapResult.status != 205 {
             EdgeLogger.error("Unexpected /p2p/webrtc-info return code \(coapResult.status). Failed to initialize signaling service.")
-            throw EdgeWebRTCError.signalingFailedToInitialize
+            throw EdgeWebrtcError.signalingFailedToInitialize
         }
 
         var rtcInfo: RTCInfo
@@ -95,7 +95,7 @@ public class EdgeStreamSignaling: EdgeSignaling {
         } else {
             EdgeLogger.error("/p2p/webrtc-info returned invalid content format \(String(describing: coapResult.contentFormat))")
             try self.stream.close()
-            throw EdgeWebRTCError.signalingFailedToInitialize
+            throw EdgeWebrtcError.signalingFailedToInitialize
         }
 
         try await self.stream.openAsync(streamPort: rtcInfo.signalingStreamPort)

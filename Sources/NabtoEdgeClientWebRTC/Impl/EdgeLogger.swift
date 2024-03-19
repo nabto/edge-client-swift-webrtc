@@ -11,7 +11,7 @@ import WebRTC
 
 internal class EdgeLogger {
     fileprivate static var logger: InternalLogger = {
-        let logLevel = EdgeWebRTCLogLevel.error
+        let logLevel = EdgeWebrtcLogLevel.error
         if #available(iOS 14.0, OSX 11.0, *) {
             return SwiftLogger(logLevel)
         } else {
@@ -19,7 +19,7 @@ internal class EdgeLogger {
         }
     }()
     
-    static func setLogLevel(_ level: EdgeWebRTCLogLevel) {
+    static func setLogLevel(_ level: EdgeWebrtcLogLevel) {
         if level == .verbose {
             // activate internal webrtc logging for verbose
             RTCSetMinDebugLogLevel(.info)
@@ -46,20 +46,20 @@ internal class EdgeLogger {
 }
 
 fileprivate protocol InternalLogger {
-    func log(_ msgLevel: EdgeWebRTCLogLevel, _ msg: String)
-    var logLevel: EdgeWebRTCLogLevel { get set }
+    func log(_ msgLevel: EdgeWebrtcLogLevel, _ msg: String)
+    var logLevel: EdgeWebrtcLogLevel { get set }
 }
 
 @available(iOS 14.0, *)
 fileprivate class SwiftLogger: InternalLogger {
-    var logLevel: EdgeWebRTCLogLevel
+    var logLevel: EdgeWebrtcLogLevel
     let logger = Logger()
     
-    init(_ logLevel: EdgeWebRTCLogLevel) {
+    init(_ logLevel: EdgeWebrtcLogLevel) {
         self.logLevel = logLevel
     }
     
-    func log(_ msgLevel: EdgeWebRTCLogLevel, _ msg: String) {
+    func log(_ msgLevel: EdgeWebrtcLogLevel, _ msg: String) {
         if msgLevel.rawValue <= logLevel.rawValue {
             switch msgLevel {
             case .verbose:
@@ -76,13 +76,13 @@ fileprivate class SwiftLogger: InternalLogger {
 }
 
 fileprivate class CompatLogger: InternalLogger {
-    var logLevel: EdgeWebRTCLogLevel
+    var logLevel: EdgeWebrtcLogLevel
     
-    init(_ logLevel: EdgeWebRTCLogLevel) {
+    init(_ logLevel: EdgeWebrtcLogLevel) {
         self.logLevel = logLevel
     }
     
-    func log(_ msgLevel: EdgeWebRTCLogLevel, _ msg: String) {
+    func log(_ msgLevel: EdgeWebrtcLogLevel, _ msg: String) {
         if msgLevel.rawValue <= logLevel.rawValue {
             switch msgLevel {
             case .verbose:

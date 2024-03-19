@@ -12,7 +12,7 @@ import WebRTC
 /**
  * Log levels to use in the underlying SDK
  */
-public enum EdgeWebRTCLogLevel: Int {
+public enum EdgeWebrtcLogLevel: Int {
     case error = 0
     case warning = 1
     case info = 2
@@ -22,7 +22,7 @@ public enum EdgeWebRTCLogLevel: Int {
 /**
  * Manager interface to keep track of global WebRTC state
  */
-public class EdgeWebRTC {
+public class EdgeWebrtc {
     private init() {}
 
     internal static let factory: RTCPeerConnectionFactory = {
@@ -37,7 +37,7 @@ public class EdgeWebRTC {
      *
      * @param logLevel [in] The log level to set
      */
-    public static func setLogLevel(_ logLevel: EdgeWebRTCLogLevel) {
+    public static func setLogLevel(_ logLevel: EdgeWebrtcLogLevel) {
         EdgeLogger.setLogLevel(logLevel)
     }
 

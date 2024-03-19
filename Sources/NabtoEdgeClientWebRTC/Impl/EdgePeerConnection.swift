@@ -11,7 +11,6 @@ import NabtoEdgeClient
 import os
 
 internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
-    var onConnected: EdgeOnConnectedCallback? = nil
     var onClosed: EdgeOnClosedCallback? = nil
     var onTrack: EdgeOnTrackCallback? = nil
     var onError: EdgeOnErrorCallback? = nil
@@ -36,9 +35,11 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     }
     
     func connect() async throws {
-        self.signaling = try await EdgeStreamSignaling(conn!)
-        Task {
-            await messageLoop()
+        try await withUnsafeThrowingContinuation { continuation in
+            Task {
+                self.signaling = try await EdgeStreamSignaling(self.conn!)
+                await messageLoop(continuation)
+            }
         }
     }
     
@@ -48,7 +49,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         self.conn = nil
     }
     
-    private func error(_ err: EdgeWebRTCError, _ msg: String?) {
+    private func error(_ err: EdgeWebrtcError, _ msg: String?) {
         if let msg = msg {
             EdgeLogger.error(msg)
         }
@@ -118,29 +119,46 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     
     private func startPeerConnection(_ config: RTCConfiguration) {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        guard let peerConnection = EdgeWebRTC.factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
+        guard let peerConnection = EdgeWebrtc.factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
             fatalError("Failed to create RTCPeerConnection")
         }
         
         self.peerConnection = peerConnection
-        self.onConnected?()
     }
     
-    private func messageLoop() async {
-        await signaling.send(SignalMessage(type: .turnRequest))
+    private func messageLoop(_ connectContinuation: UnsafeContinuation<Void, Error>) async {
+        var hasResumed = false
+        func reject(_ err: Error) {
+            if !hasResumed {
+                hasResumed = true
+                connectContinuation.resume(throwing: err)
+            }
+        }
         
+        func resolve() {
+            if !hasResumed {
+                hasResumed = true
+                connectContinuation.resume()
+            }
+        }
+        
+        // @TODO: Reject on error from this turnRequest
+        await signaling.send(SignalMessage(type: .turnRequest))
         while true {
             var msg: SignalMessage? = nil
             do {
                 msg = try await signaling.recv()
             } catch NabtoEdgeClientError.EOF {
                 EdgeLogger.info("Signaling stream is EOF! Closing message loop.")
+                reject(EdgeWebrtcError.signalingFailedRecv)
                 break
             } catch NabtoEdgeClientError.STOPPED {
                 EdgeLogger.info("Signaling stream is STOPPED! Closing message loop.")
+                reject(EdgeWebrtcError.signalingFailedRecv)
                 break
             } catch {
                 self.error(.signalingFailedRecv, "Failed to receive signaling message: \(error)")
+                reject(EdgeWebrtcError.signalingFailedRecv)
                 msg = nil
             }
             
@@ -205,10 +223,12 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                 }
                 
                 self.startPeerConnection(config)
+                resolve()
                 break
                 
             default:
                 self.error(.signalingInvalidMessage, "Signaling message had unexpected type: \(msg.type)")
+                reject(EdgeWebrtcError.signalingInvalidMessage)
                 break
             }
         }

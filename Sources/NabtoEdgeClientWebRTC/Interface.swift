@@ -4,7 +4,7 @@ import WebRTC
 /**
  * Errors emitted by the onErrorCallback
  */
-public enum EdgeWebRTCError : Error {
+public enum EdgeWebrtcError : Error {
     /**
      * The signaling stream could not be established properly.
      */
@@ -99,11 +99,6 @@ public protocol EdgeAudioTrack: EdgeMediaTrack {
 public typealias EdgeOnTrackCallback = (EdgeMediaTrack) -> ()
 
 /**
- * Callback invoked when a WebRTC connection has been established
- */
-public typealias EdgeOnConnectedCallback = () -> ()
-
-/**
  * Callback invoked when a WebRTC connection has been closed
  */
  public typealias EdgeOnClosedCallback = () -> ()
@@ -113,7 +108,7 @@ public typealias EdgeOnConnectedCallback = () -> ()
  *
  * @param EdgeWebRTCError [in] The Error that occured
  */
-public typealias EdgeOnErrorCallback = (EdgeWebRTCError) -> ()
+public typealias EdgeOnErrorCallback = (EdgeWebrtcError) -> ()
 
 
 /**
@@ -127,13 +122,6 @@ public protocol EdgePeerConnection {
      * @param cb The callback to set
      */
     var onTrack: EdgeOnTrackCallback? { get set }
-
-    /**
-     * Set callback to be invoked when the WebRTC connection is connected
-     *
-     * @param cb The callback to set
-     */
-    var onConnected: EdgeOnConnectedCallback? { get set }
 
     /**
      * Set callback to be invoked when the WebRTC connection is closed
