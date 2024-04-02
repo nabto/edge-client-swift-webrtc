@@ -41,11 +41,12 @@ public class EdgeWebrtc {
         EdgeLogger.setLogLevel(logLevel)
     }
 
-    // TODO: add @throws docs
     /**
      * Create a new WebRTC connection instance using a preexisting Nabto Edge Connection for signaling.
      *
      * Only one WebRTC connection can exist on a Nabto Edge Connection at a time.
+     *
+     * This function does not throw any exceptions.
      *
      * @param conn [in] The Nabto Edge Connection to use for signaling
      * @return The created EdgePeerConnection object

@@ -14,6 +14,11 @@ public enum EdgeWebrtcError : Error {
      * Reading from the Signaling Stream failed
      */
     case signalingFailedRecv
+    
+    /**
+     * Writing to the Signaling Stream failed
+     */
+    case signalingFailedSend
 
     /**
      * An invalid signaling message was received
@@ -51,7 +56,6 @@ public protocol EdgeMediaTrack {
  * Video Track representing a Media Track of type Video
  */
 public protocol EdgeVideoTrack: EdgeMediaTrack {
-    // TODO: add @throws docs
     /**
      * Add a Video renderer to the track
      *
@@ -59,7 +63,6 @@ public protocol EdgeVideoTrack: EdgeMediaTrack {
      */
     func add(_ renderer: EdgeVideoRenderer)
 
-    // TODO: add @throws docs
     /**
      * Remove a Video renderer from the track
      *
@@ -73,7 +76,6 @@ public protocol EdgeVideoTrack: EdgeMediaTrack {
  */
 public protocol EdgeAudioTrack: EdgeMediaTrack {
 
-    // TODO: add @throws docs
     /**
      * Set the volume of the Audio track
      *
@@ -81,7 +83,6 @@ public protocol EdgeAudioTrack: EdgeMediaTrack {
      */
     func setVolume(_ volume: Double)
 
-    // TODO: add @throws docs
     /**
      * Enable or disable the Audio track
      *
@@ -137,13 +138,15 @@ public protocol EdgePeerConnection {
      */
     var onError: EdgeOnErrorCallback? { get set }
 
-    // TODO: add @throws docs
     /**
      * Establish a WebRTC connection to the other peer
+     *
+     * @throws EdgeWebrtcError.signalingFailedToInitialize if the signaling stream could not be set up for some reason.
+     * @throws EdgeWebrtcError.signalingFailedRecv if the signaling stream failed to receive messages necessary to setting up the connection.
+     * @throws EdgeWebrtcError.signalingFailedSend if the signaling stream failed to send messages necessary to setting up the connection.
      */
     func connect() async throws
 
-    // TODO: add @throws docs
     /**
      * Close a connected WebRTC connection.
      */
