@@ -8,7 +8,16 @@
 import Foundation
 import WebRTC
 import NabtoEdgeClient
+import CBORCoding
 import os
+
+fileprivate struct RTCInfo: Codable {
+    let signalingStreamPort: UInt32
+
+    enum CodingKeys: String, CodingKey {
+        case signalingStreamPort = "SignalingStreamPort"
+    }
+}
 
 internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     var onClosed: EdgeOnClosedCallback? = nil
@@ -27,10 +36,6 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     private var ignoreOffer = false
     
     
-    deinit {
-        close()
-    }
-    
     init(_ conn: Connection) {
         super.init()
         self.conn = conn
@@ -39,14 +44,44 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     func connect() async throws {
         try await withUnsafeThrowingContinuation { continuation in
             Task {
-                self.signaling = try await EdgeStreamSignaling(self.conn!)
+                guard let conn = conn else {
+                    EdgeLogger.error("Nabto connection is nil. Failed to establish WebRTC connection.")
+                    throw EdgeWebrtcError.signalingFailedToInitialize
+                }
+                
+                let coap = try conn.createCoapRequest(method: "GET", path: "/p2p/webrtc-info")
+                let coapResult = try await coap.executeAsync()
+
+                if coapResult.status != 205 {
+                    EdgeLogger.error("Unexpected /p2p/webrtc-info return code \(coapResult.status). Failed to initialize signaling service.")
+                    throw EdgeWebrtcError.signalingFailedToInitialize
+                }
+
+                var rtcInfo: RTCInfo
+                let stream = try conn.createStream()
+
+                let cborDecoder = CBORDecoder()
+                let jsonDecoder = JSONDecoder()
+                if coapResult.contentFormat == 50 {
+                    rtcInfo = try jsonDecoder.decode(RTCInfo.self, from: coapResult.payload)
+                } else if coapResult.contentFormat == 60 {
+                    rtcInfo = try cborDecoder.decode(RTCInfo.self, from: coapResult.payload)
+                } else {
+                    EdgeLogger.error("/p2p/webrtc-info returned invalid content format \(String(describing: coapResult.contentFormat))")
+                    try stream.close()
+                    throw EdgeWebrtcError.signalingFailedToInitialize
+                }
+
+                try await stream.openAsync(streamPort: rtcInfo.signalingStreamPort)
+                
+                self.signaling = try await EdgeStreamSignaling(stream)
                 await messageLoop(continuation)
             }
         }
     }
     
-    func close() {
-        signaling.close()
+    func close() async {
+        await signaling.close()
         peerConnection?.close()
         self.conn = nil
     }

@@ -151,5 +151,5 @@ public protocol EdgePeerConnection {
     /**
      * Close a connected WebRTC connection.
      */
-    func close()
+    func close() async
 }
