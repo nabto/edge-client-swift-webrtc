@@ -95,9 +95,10 @@ public protocol EdgeAudioTrack: EdgeMediaTrack {
 /**
  * Callback invoked when the remote peer has added a Track to the WebRTC connection
  *
- * @param EdgeMediaTrack [in] The newly added Track
+ * @param track [in] The newly added Track
+ * @param trackId [in] The device repoted ID for this Track
  */
-public typealias EdgeOnTrackCallback = (EdgeMediaTrack) -> ()
+public typealias EdgeOnTrackCallback = (_ track: EdgeMediaTrack, _ trackId: String?) -> ()
 
 /**
  * Callback invoked when a WebRTC connection has been closed
@@ -107,9 +108,9 @@ public typealias EdgeOnTrackCallback = (EdgeMediaTrack) -> ()
 /**
  * Callback invoked when an error occurs in the WebRTC connection
  *
- * @param EdgeWebRTCError [in] The Error that occured
+ * @param error [in] The Error that occured
  */
-public typealias EdgeOnErrorCallback = (EdgeWebrtcError) -> ()
+public typealias EdgeOnErrorCallback = (_ error: EdgeWebrtcError) -> ()
 
 
 /**

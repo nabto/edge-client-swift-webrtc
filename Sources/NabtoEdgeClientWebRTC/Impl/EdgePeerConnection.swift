@@ -15,8 +15,10 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     var onTrack: EdgeOnTrackCallback? = nil
     var onError: EdgeOnErrorCallback? = nil
     
-    private var peerConnection: RTCPeerConnection?
     private var signaling: EdgeSignaling!
+    private var receivedMetadata: [String: SignalMessageMetadataTrack] = [:]
+    
+    private var peerConnection: RTCPeerConnection?
     private let jsonDecoder = JSONDecoder()
     private var conn: Connection?
     
@@ -78,11 +80,52 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     
     private func sendDescription(_ description: RTCSessionDescription) async throws {
         let type = description.type == .answer ? SignalMessageType.answer : SignalMessageType.offer
-        let msg = SignalMessage(type: type, data: description.toJSON())
+        let msg = SignalMessage(type: type, data: description.toJSON(), metadata: createMetadata())
         await signaling.send(msg)
     }
     
-    private func handleDescription(_ description: RTCSessionDescription?) async {
+    private func createMetadata() -> SignalMessageMetadata {
+        var tracks: [SignalMessageMetadataTrack] = []
+        
+        peerConnection?.transceivers.forEach { transceiver in
+            let metaTrack = receivedMetadata[transceiver.mid]
+            if let metaTrack = metaTrack {
+                tracks.append(metaTrack)
+            }
+            // @TODO: If we consider adding addTrack to this API then we will have to generate metadata for added tracks here.
+        }
+        
+        var status = "OK"
+        tracks.forEach { track in
+            if track.error != nil && track.error != "OK" {
+                status = "FAILED"
+            }
+        }
+        
+        return SignalMessageMetadata(
+            tracks: tracks,
+            noTrickle: false,
+            status: status
+        )
+    }
+    
+    private func handleMetadata(_ data: SignalMessageMetadata) {
+        if data.status == "FAILED" {
+            if let tracks = data.tracks {
+                for track in tracks {
+                    if let error = track.error {
+                        EdgeLogger.error("Device reported \(track.mid):\(track.trackId) failed with error: \(error)")
+                    }
+                }
+            }
+        }
+        
+        data.tracks?.forEach { track in
+            receivedMetadata[track.mid] = track
+        }
+    }
+    
+    private func handleDescription(_ description: RTCSessionDescription?, metadata: SignalMessageMetadata?) async {
         guard let description = description else {
             EdgeLogger.error("SDP is nil in handleDescription. Ensure your signaling is functional!")
             return
@@ -99,6 +142,10 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         if ignoreOffer {
             EdgeLogger.info("Ignoring offer...")
             return
+        }
+        
+        if let metadata = metadata {
+            handleMetadata(metadata)
         }
         
         do {
@@ -174,7 +221,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                 do {
                     let answer = try jsonDecoder.decode(SDP.self, from: msg.data!.data(using: .utf8)!)
                     let sdp = RTCSessionDescription(type: RTCSdpType.answer, sdp: answer.sdp)
-                    await handleDescription(sdp)
+                    await handleDescription(sdp, metadata: msg.metadata)
                 } catch {
                     self.error(.setRemoteDescriptionError, "Failed handling ANSWER message: \(error)")
                 }
@@ -184,7 +231,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                 do {
                     let offer = try jsonDecoder.decode(SDP.self, from: msg.data!.data(using: .utf8)!)
                     let sdp = RTCSessionDescription(type: RTCSdpType.offer, sdp: offer.sdp)
-                    await handleDescription(sdp)
+                    await handleDescription(sdp, metadata: msg.metadata)
                 } catch {
                     self.error(.setRemoteDescriptionError, "Failed handling OFFER message: \(error)")
                 }
@@ -250,13 +297,23 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
         EdgeLogger.info("New RtpReceiver \(rtpReceiver.receiverId) added")
         let track = rtpReceiver.track
         if let track = track {
+            let transceiver = peerConnection.transceivers.first(where: { transceiver in
+                transceiver.receiver.receiverId == rtpReceiver.receiverId
+            })
+            
+            let trackId: String? = if let mid = transceiver?.mid {
+                receivedMetadata[mid]?.trackId
+            } else {
+                nil
+            }
+            
             switch (track) {
             case is RTCVideoTrack:
                 let videoTrack = track as! RTCVideoTrack
-                self.onTrack?(EdgeVideoTrackImpl(track: videoTrack))
+                self.onTrack?(EdgeVideoTrackImpl(track: videoTrack), trackId)
             case is RTCAudioTrack:
                 let audioTrack = track as! RTCAudioTrack
-                self.onTrack?(EdgeAudioTrackImpl(track: audioTrack))
+                self.onTrack?(EdgeAudioTrackImpl(track: audioTrack), trackId)
                 break
             default:
                 // This code path is unreachable

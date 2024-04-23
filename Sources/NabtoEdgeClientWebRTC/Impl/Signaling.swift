@@ -34,11 +34,13 @@ public struct IceCandidate: Codable {
 public struct SignalMessageMetadataTrack: Codable {
     let mid: String
     let trackId: String
+    let error: String?
 }
 
 public struct SignalMessageMetadata: Codable {
     let tracks: [SignalMessageMetadataTrack]?
     let noTrickle: Bool?
+    let status: String?
 }
 
 public enum SignalMessageType: Int, Codable {
