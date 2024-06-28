@@ -2,6 +2,36 @@ import Foundation
 import WebRTC
 
 /**
+ * Callback invoked when the remote peer has added a Track to the WebRTC connection
+ *
+ * @param track [in] The newly added Track
+ * @param trackId [in] The device repoted ID for this Track
+ */
+public typealias EdgeOnTrackCallback = (_ track: EdgeMediaTrack, _ trackId: String?) -> ()
+
+/**
+ * Callback invoked when the object (e.g. a data channel) has opened.
+ */
+public typealias EdgeOnOpenedCallback = () -> ()
+
+/**
+ * Callback invoked when a WebRTC connection has been closed
+ */
+ public typealias EdgeOnClosedCallback = () -> ()
+
+/**
+ * Callback invoked when an error occurs in the WebRTC connection
+ *
+ * @param error [in] The Error that occured
+ */
+public typealias EdgeOnErrorCallback = (_ error: EdgeWebrtcError) -> ()
+
+/**
+ * Callback invoked when a data channel has received a message.
+ */
+public typealias EdgeOnMessageCallback = (_ data: Data) -> ()
+
+/**
  * Errors emitted by the onErrorCallback
  */
 public enum EdgeWebrtcError : Error {
@@ -91,27 +121,43 @@ public protocol EdgeAudioTrack: EdgeMediaTrack {
     func setEnabled(_ enabled: Bool)
 }
 
-
 /**
- * Callback invoked when the remote peer has added a Track to the WebRTC connection
- *
- * @param track [in] The newly added Track
- * @param trackId [in] The device repoted ID for this Track
+ * Data channel for sending and receiving bytes on a webrtc connection
  */
-public typealias EdgeOnTrackCallback = (_ track: EdgeMediaTrack, _ trackId: String?) -> ()
-
-/**
- * Callback invoked when a WebRTC connection has been closed
- */
- public typealias EdgeOnClosedCallback = () -> ()
-
-/**
- * Callback invoked when an error occurs in the WebRTC connection
- *
- * @param error [in] The Error that occured
- */
-public typealias EdgeOnErrorCallback = (_ error: EdgeWebrtcError) -> ()
-
+public protocol EdgeDataChannel {
+    /**
+     * Set the callback to be invoked when the data channel receives a message.
+     *
+     * @param cb The callback to set
+     */
+    var onMessage: EdgeOnMessageCallback? { get set }
+    
+    /**
+     * Set the callback to be invoked when the data channel is open and ready to send/receive messages.
+     *
+     * @param cb The callback to set
+     */
+    var onOpened: EdgeOnOpenedCallback? { get set }
+    
+    /**
+     * Set the callback to be invoked when the data channel is closed.
+     *
+     * @param cb The callback to set
+     */
+    var onClosed: EdgeOnClosedCallback? { get set }
+    
+    /**
+     * Send a Data byte buffer over the data channel.
+     *
+     * @param data The binary data to be sent.
+     */
+    func send(_ data: Data) async
+    
+    /**
+     * Closes the data channel.
+     */
+    func close() async
+}
 
 /**
  * Main Connection interface used to connect to a device and interact with it.
@@ -138,6 +184,14 @@ public protocol EdgePeerConnection {
      * @param cb The callback to set
      */
     var onError: EdgeOnErrorCallback? { get set }
+    
+    /**
+     * Create a new data channel
+     * WARNING: Data channels are experimental and may not work as expected..
+     *
+     * @param label A string that describes the data channel.
+     */
+    func createDataChannel(_ label: String) throws -> EdgeDataChannel
 
     /**
      * Establish a WebRTC connection to the other peer

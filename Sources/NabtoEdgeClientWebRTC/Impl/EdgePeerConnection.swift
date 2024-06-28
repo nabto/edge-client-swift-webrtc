@@ -51,15 +51,15 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                 
                 let coap = try conn.createCoapRequest(method: "GET", path: "/p2p/webrtc-info")
                 let coapResult = try await coap.executeAsync()
-
+                
                 if coapResult.status != 205 {
                     EdgeLogger.error("Unexpected /p2p/webrtc-info return code \(coapResult.status). Failed to initialize signaling service.")
                     throw EdgeWebrtcError.signalingFailedToInitialize
                 }
-
+                
                 var rtcInfo: RTCInfo
                 let stream = try conn.createStream()
-
+                
                 let cborDecoder = CBORDecoder()
                 let jsonDecoder = JSONDecoder()
                 if coapResult.contentFormat == 50 {
@@ -71,7 +71,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
                     try stream.close()
                     throw EdgeWebrtcError.signalingFailedToInitialize
                 }
-
+                
                 try await stream.openAsync(streamPort: rtcInfo.signalingStreamPort)
                 
                 self.signaling = try await EdgeStreamSignaling(stream)
@@ -84,6 +84,12 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         await signaling.close()
         peerConnection?.close()
         self.conn = nil
+    }
+    
+    func createDataChannel(_ label: String) throws -> EdgeDataChannel {
+        let config = RTCDataChannelConfiguration()
+        let dc = peerConnection?.dataChannel(forLabel: label, configuration: config)
+        return EdgeDataChannelImpl(dc!)
     }
     
     private func error(_ err: EdgeWebrtcError, _ msg: String?) {
