@@ -9,6 +9,7 @@ import Foundation
 import WebRTC
 
 public class EdgeVideoTrackImpl: EdgeVideoTrack {
+    public private(set) var type: EdgeMediaTrackType = .video
     internal var track: RTCVideoTrack
     
     internal init(track: RTCVideoTrack) {
