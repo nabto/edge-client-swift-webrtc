@@ -9,6 +9,7 @@ import Foundation
 import WebRTC
 
 public class EdgeAudioTrackImpl: EdgeAudioTrack {
+    public private(set) var type: EdgeMediaTrackType = .audio
     internal var track: RTCAudioTrack
     
     internal init(track: RTCAudioTrack) {

@@ -92,6 +92,18 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         return EdgeDataChannelImpl(dc!)
     }
     
+    func addTrack(_ track: EdgeMediaTrack, streamIds: [String]) throws {
+        let t = switch track {
+        case let videoTrack as EdgeVideoTrackImpl:
+            videoTrack.track
+        case let audioTrack as EdgeAudioTrackImpl:
+            audioTrack.track
+        default:
+            throw InvalidTrackError()
+        }
+        peerConnection?.add(t, streamIds: streamIds)
+    }
+    
     private func error(_ err: EdgeWebrtcError, _ msg: String?) {
         if let msg = msg {
             EdgeLogger.error(msg)

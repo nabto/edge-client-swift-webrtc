@@ -77,9 +77,23 @@ public enum EdgeWebrtcError : Error {
 }
 
 /**
+ * Error thrown by addTrack if the argument
+ */
+struct InvalidTrackError: LocalizedError {}
+
+/**
+ * Track types used to identify if a track is Video or Audio
+ */
+public enum EdgeMediaTrackType {
+    case audio
+    case video
+}
+
+/**
  * Interface used to represent all Media Tracks
  */
 public protocol EdgeMediaTrack {
+    var type: EdgeMediaTrackType { get }
 }
 
 /**
@@ -192,6 +206,14 @@ public protocol EdgePeerConnection {
      * @param label A string that describes the data channel.
      */
     func createDataChannel(_ label: String) throws -> EdgeDataChannel
+    
+    /**
+     * Add a track to this  connection.
+     *
+     *@param track The track to be added.
+     *@param streamIds List of stream ids that this track will be added to.
+     */
+    func addTrack(_ track: EdgeMediaTrack, streamIds: [String]) throws
 
     /**
      * Establish a WebRTC connection to the other peer
