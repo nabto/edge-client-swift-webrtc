@@ -44,7 +44,7 @@ public enum EdgeWebrtcError : Error {
      * Reading from the Signaling Stream failed
      */
     case signalingFailedRecv
-    
+
     /**
      * Writing to the Signaling Stream failed
      */
@@ -79,7 +79,9 @@ public enum EdgeWebrtcError : Error {
 /**
  * Error thrown by addTrack if the argument
  */
-struct InvalidTrackError: LocalizedError {}
+struct InvalidTrackError: LocalizedError {
+
+}
 
 /**
  * Track types used to identify if a track is Video or Audio
@@ -145,28 +147,28 @@ public protocol EdgeDataChannel {
      * @param cb The callback to set
      */
     var onMessage: EdgeOnMessageCallback? { get set }
-    
+
     /**
      * Set the callback to be invoked when the data channel is open and ready to send/receive messages.
      *
      * @param cb The callback to set
      */
     var onOpened: EdgeOnOpenedCallback? { get set }
-    
+
     /**
      * Set the callback to be invoked when the data channel is closed.
      *
      * @param cb The callback to set
      */
     var onClosed: EdgeOnClosedCallback? { get set }
-    
+
     /**
      * Send a Data byte buffer over the data channel.
      *
      * @param data The binary data to be sent.
      */
     func send(_ data: Data) async
-    
+
     /**
      * Closes the data channel.
      */
@@ -198,7 +200,7 @@ public protocol EdgePeerConnection {
      * @param cb The callback to set
      */
     var onError: EdgeOnErrorCallback? { get set }
-    
+
     /**
      * Create a new data channel
      * WARNING: Data channels are experimental and may not work as expected..
@@ -206,7 +208,7 @@ public protocol EdgePeerConnection {
      * @param label A string that describes the data channel.
      */
     func createDataChannel(_ label: String) throws -> EdgeDataChannel
-    
+
     /**
      * Add a track to this  connection.
      *
