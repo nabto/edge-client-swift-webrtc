@@ -52,7 +52,7 @@ public class EdgeWebrtc {
      * @return The created EdgePeerConnection object
      */
     public static func createPeerConnection(_ connection: Connection) -> EdgePeerConnection {
-        return EdgePeerConnectionImpl(connection)
+        return EdgePeerConnectionImpl(factory: factory, signaling: EdgeStreamSignaling(connection))
     }
 
     /**

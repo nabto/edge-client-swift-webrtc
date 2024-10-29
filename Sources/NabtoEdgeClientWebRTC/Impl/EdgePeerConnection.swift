@@ -11,79 +11,34 @@ import NabtoEdgeClient
 import CBORCoding
 import os
 
-fileprivate struct RTCInfo: Codable {
-    let signalingStreamPort: UInt32
-
-    enum CodingKeys: String, CodingKey {
-        case signalingStreamPort = "SignalingStreamPort"
-    }
-}
-
 internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     var onClosed: EdgeOnClosedCallback? = nil
     var onTrack: EdgeOnTrackCallback? = nil
     var onError: EdgeOnErrorCallback? = nil
     
-    private var signaling: EdgeSignaling!
-    private var receivedMetadata: [String: SignalMessageMetadataTrack] = [:]
+    private let peerConnectionFactory: RTCPeerConnectionFactory
+    private let signaling: EdgeSignaling
+    private var peerConnection: RTCPeerConnection? = nil
+    private var perfectNegotiator: PerfectNegotiator? = nil
+    private let peerName = "client"
     
-    private var peerConnection: RTCPeerConnection?
-    private let jsonDecoder = JSONDecoder()
-    private var conn: Connection?
-    
-    private var isPolite = true
-    private var isMakingOffer = false
-    private var ignoreOffer = false
-    
-    
-    init(_ conn: Connection) {
-        super.init()
-        self.conn = conn
+    init(factory: RTCPeerConnectionFactory, signaling: EdgeSignaling) {
+        self.peerConnectionFactory = factory
+        self.signaling = signaling
     }
     
     func connect() async throws {
-        try await withUnsafeThrowingContinuation { continuation in
-            Task {
-                guard let conn = conn else {
-                    EdgeLogger.error("Nabto connection is nil. Failed to establish WebRTC connection.")
-                    throw EdgeWebrtcError.signalingFailedToInitialize
-                }
-                
-                let coap = try conn.createCoapRequest(method: "GET", path: "/p2p/webrtc-info")
-                let coapResult = try await coap.executeAsync()
-                
-                if coapResult.status != 205 {
-                    EdgeLogger.error("Unexpected /p2p/webrtc-info return code \(coapResult.status). Failed to initialize signaling service.")
-                    throw EdgeWebrtcError.signalingFailedToInitialize
-                }
-                
-                var rtcInfo: RTCInfo
-                let stream = try conn.createStream()
-                
-                let cborDecoder = CBORDecoder()
-                let jsonDecoder = JSONDecoder()
-                if coapResult.contentFormat == 50 {
-                    rtcInfo = try jsonDecoder.decode(RTCInfo.self, from: coapResult.payload)
-                } else if coapResult.contentFormat == 60 {
-                    rtcInfo = try cborDecoder.decode(RTCInfo.self, from: coapResult.payload)
-                } else {
-                    EdgeLogger.error("/p2p/webrtc-info returned invalid content format \(String(describing: coapResult.contentFormat))")
-                    try stream.close()
-                    throw EdgeWebrtcError.signalingFailedToInitialize
-                }
-                
-                try await stream.openAsync(streamPort: rtcInfo.signalingStreamPort)
-                
-                self.signaling = try await EdgeStreamSignaling(stream)
-                await messageLoop(continuation)
-            }
+        do {
+            try await signaling.start()
+        } catch {
+            EdgeLogger.error("Failed to initialize signaling service")
+            throw error
         }
-    }
-    
-    func close() async {
-        await signaling.close()
-        peerConnection?.close()
-        self.conn = nil
+        
+        let turnRequest = SignalMessage(type: .turnRequest)
+        
+        await signaling.send(turnRequest)
+        await waitForTurnResponse()
     }
     
     func createDataChannel(_ label: String) throws -> EdgeDataChannel {
@@ -104,250 +59,78 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         peerConnection?.add(t, streamIds: streamIds)
     }
     
-    private func error(_ err: EdgeWebrtcError, _ msg: String?) {
-        if let msg = msg {
-            EdgeLogger.error(msg)
-        }
-        self.onError?(err)
+    func close() async {
+        peerConnection?.close()
+        await signaling.close()
     }
-    
-    private func createOffer(_ pc: RTCPeerConnection) async -> RTCSessionDescription {
-        let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        return await withCheckedContinuation { continuation in
-            pc.offer(for: constraints) { (sdp, error) in
-                guard let sdp = sdp else { return }
-                continuation.resume(returning: sdp)
-            }
-        }
-    }
-    
-    private func createAnswer(_ pc: RTCPeerConnection) async -> RTCSessionDescription {
-        let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        return await withCheckedContinuation { continuation in
-            pc.answer(for: constraints) { (sdp, error) in
-                guard let sdp = sdp else { return }
-                continuation.resume(returning: sdp)
-            }
-        }
-    }
-    
-    private func sendDescription(_ description: RTCSessionDescription) async throws {
-        let type = description.type == .answer ? SignalMessageType.answer : SignalMessageType.offer
-        let msg = SignalMessage(type: type, data: description.toJSON(), metadata: createMetadata())
-        await signaling.send(msg)
-    }
-    
-    private func createMetadata() -> SignalMessageMetadata {
-        var tracks: [SignalMessageMetadataTrack] = []
-        
-        peerConnection?.transceivers.forEach { transceiver in
-            let metaTrack = receivedMetadata[transceiver.mid]
-            if let metaTrack = metaTrack {
-                tracks.append(metaTrack)
-            }
-            // @TODO: If we consider adding addTrack to this API then we will have to generate metadata for added tracks here.
-        }
-        
-        var status = "OK"
-        tracks.forEach { track in
-            if track.error != nil && track.error != "OK" {
-                status = "FAILED"
-            }
-        }
-        
-        return SignalMessageMetadata(
-            tracks: tracks,
-            noTrickle: false,
-            status: status
-        )
-    }
-    
-    private func handleMetadata(_ data: SignalMessageMetadata) {
-        if data.status == "FAILED" {
-            if let tracks = data.tracks {
-                for track in tracks {
-                    if let error = track.error {
-                        EdgeLogger.error("Device reported \(track.mid):\(track.trackId) failed with error: \(error)")
-                    }
-                }
-            }
-        }
-        
-        data.tracks?.forEach { track in
-            receivedMetadata[track.mid] = track
-        }
-    }
-    
-    private func handleDescription(_ description: RTCSessionDescription?, metadata: SignalMessageMetadata?) async {
-        guard let description = description else {
-            EdgeLogger.error("SDP is nil in handleDescription. Ensure your signaling is functional!")
-            return
-        }
-        
-        guard let pc = peerConnection else {
-            EdgeLogger.error("handleDescription failed: peer connection is not open.")
-            return
-        }
-        
-        let offerCollision = description.type == .offer && (isMakingOffer || pc.signalingState == .stable)
-        ignoreOffer = !isPolite && offerCollision
-        
-        if ignoreOffer {
-            EdgeLogger.info("Ignoring offer...")
-            return
-        }
-        
-        if let metadata = metadata {
-            handleMetadata(metadata)
-        }
-        
+
+    private func waitForTurnResponse() async {
+        var msg: SignalMessage! = nil
         do {
-            try await pc.setRemoteDescription(description)
+            msg = try await signaling.recv()
         } catch {
-            self.error(.setRemoteDescriptionError, "Setting remote SDP failed: \(error)")
+            EdgeLogger.error("Failed to receive signaling message: \(error)")
+            self.onError?(.signalingFailedRecv)
+            return
         }
         
-        if pc.remoteDescription?.type == .offer {
-            do {
-                try await pc.setLocalDescription()
-                try await sendDescription(pc.localDescription!)
-            } catch {
-                self.error(.sendAnswerError, "Failed sending an answer to offer message: \(error)")
-            }
-        }
-    }
-    
-    private func startPeerConnection(_ config: RTCConfiguration) {
-        let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        guard let peerConnection = EdgeWebrtc.factory.peerConnection(with: config, constraints: constraints, delegate: self) else {
-            fatalError("Failed to create RTCPeerConnection")
-        }
-        
-        self.peerConnection = peerConnection
-    }
-    
-    private func messageLoop(_ connectContinuation: UnsafeContinuation<Void, Error>) async {
-        var hasResumed = false
-        func reject(_ err: Error) {
-            if !hasResumed {
-                hasResumed = true
-                connectContinuation.resume(throwing: err)
-            }
-        }
-        
-        func resolve() {
-            if !hasResumed {
-                hasResumed = true
-                connectContinuation.resume()
-            }
-        }
-        
-        // @TODO: call reject(signalingFailedToSend) when this fails (need to change signaling API to throw errors)
-        await signaling.send(SignalMessage(type: .turnRequest))
-        
-        while true {
-            var msg: SignalMessage? = nil
-            do {
-                msg = try await signaling.recv()
-            } catch NabtoEdgeClientError.EOF {
-                EdgeLogger.info("Signaling stream is EOF! Closing message loop.")
-                reject(EdgeWebrtcError.signalingFailedRecv)
-                break
-            } catch NabtoEdgeClientError.STOPPED {
-                EdgeLogger.info("Signaling stream is STOPPED! Closing message loop.")
-                reject(EdgeWebrtcError.signalingFailedRecv)
-                break
-            } catch {
-                self.error(.signalingFailedRecv, "Failed to receive signaling message: \(error)")
-                reject(EdgeWebrtcError.signalingFailedRecv)
-                msg = nil
-            }
-            
-            guard let msg = msg else {
-                continue
-            }
-            
-            EdgeLogger.info("Received signaling message of type \(msg.type)")
-            
-            switch msg.type {
-            case .answer:
-                do {
-                    let answer = try jsonDecoder.decode(SDP.self, from: msg.data!.data(using: .utf8)!)
-                    let sdp = RTCSessionDescription(type: RTCSdpType.answer, sdp: answer.sdp)
-                    await handleDescription(sdp, metadata: msg.metadata)
-                } catch {
-                    self.error(.setRemoteDescriptionError, "Failed handling ANSWER message: \(error)")
-                }
-                break
-                
-            case .offer:
-                do {
-                    let offer = try jsonDecoder.decode(SDP.self, from: msg.data!.data(using: .utf8)!)
-                    let sdp = RTCSessionDescription(type: RTCSdpType.offer, sdp: offer.sdp)
-                    await handleDescription(sdp, metadata: msg.metadata)
-                } catch {
-                    self.error(.setRemoteDescriptionError, "Failed handling OFFER message: \(error)")
-                }
-                
-            case .iceCandidate:
-                do {
-                    let cand = try jsonDecoder.decode(IceCandidate.self, from: msg.data!.data(using: .utf8)!)
-                    try await self.peerConnection!.add(RTCIceCandidate(
-                        sdp: cand.candidate,
-                        sdpMLineIndex: 0,
-                        sdpMid: cand.sdpMid
-                    ))
-                } catch {
-                    self.error(.iceCandidateError, "Failed handling ICE candidate message: \(error)")
-                }
-                break
-                
-            case .turnResponse:
-                guard let turnServers = msg.servers else {
-                    self.error(.connectionInitError, "Received a TURN response message without any servers listed.")
-                    break
-                }
-                
-                let config = RTCConfiguration()
-                config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.nabto.net"])]
-                config.sdpSemantics = .unifiedPlan
-                config.continualGatheringPolicy = .gatherContinually
-                
-                for server in turnServers {
+        if msg.type == .turnResponse {
+            var iceServers: [RTCIceServer] = []
+            if let servers = msg.servers {
+                for server in servers {
                     let turn = RTCIceServer(
                         urlStrings: [server.hostname],
                         username: server.username,
                         credential: server.password
                     )
                     
-                    config.iceServers.append(turn)
+                    iceServers.append(turn)
                 }
-                
-                self.startPeerConnection(config)
-                resolve()
-                break
-                
-            default:
-                self.error(.signalingInvalidMessage, "Signaling message had unexpected type: \(msg.type)")
-                reject(EdgeWebrtcError.signalingInvalidMessage)
-                break
             }
+            
+            if let servers = msg.iceServers {
+                for server in servers {
+                    let turn = RTCIceServer(
+                        urlStrings: server.urls,
+                        username: server.username,
+                        credential: server.credential
+                    )
+                    
+                    iceServers.append(turn)
+                }
+            }
+            
+            if iceServers.isEmpty {
+                EdgeLogger.error("Turn response message does not include any ice server information!")
+            }
+            
+            setupPeerConnection(iceServers)
+        } else {
+            EdgeLogger.error("Expected message of type \(SignalMessageType.turnResponse) for setting up connection but received \(msg.type)")
         }
+    }
+    
+    private func setupPeerConnection(_ iceServers: [RTCIceServer]) {
+        let config = RTCConfiguration()
+        config.iceServers = iceServers
+        config.enableImplicitRollback = true
+        
+        let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+        
+        peerConnection = peerConnectionFactory.peerConnection(with: config, constraints: constraints, delegate: self)
+    }
+    
+    private func error(_ err: EdgeWebrtcError, _ msg: String?) {
+        if let msg = msg {
+            EdgeLogger.error(msg)
+        }
+        self.onError?(err)
     }
 }
 
-// MARK: RTCPeerConnectionDelegate implementation
 extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
-        EdgeLogger.info("Signaling state changed to \((try? stateChanged.description()) ?? "invalid RTCSignalingState")")
-    }
-    
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
-        EdgeLogger.info("New RTCMediaStream \(stream.streamId) added")
-    }
-    
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
-        EdgeLogger.info("New RtpReceiver \(rtpReceiver.receiverId) added")
+        EdgeLogger.info("\(peerName) RtpReceiver \(rtpReceiver.receiverId) added")
         let track = rtpReceiver.track
         if let track = track {
             let transceiver = peerConnection.transceivers.first(where: { transceiver in
@@ -355,7 +138,7 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
             })
             
             let trackId: String? = if let mid = transceiver?.mid {
-                receivedMetadata[mid]?.trackId
+                perfectNegotiator?.receivedMetadata[mid]?.trackId
             } else {
                 nil
             }
@@ -375,55 +158,45 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
         }
     }
     
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
+        EdgeLogger.info("\(peerName) signaling state changed to \(stateChanged)")
+    }
+    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+        EdgeLogger.info("\(peerName) added RTCMediaStream \(stream)")
+    }
+    
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
-        EdgeLogger.info("RTCMediaStream \(stream.streamId) removed")
+        EdgeLogger.info("\(peerName) removed RTCMediaStream \(stream)")
     }
     
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
-        EdgeLogger.info("Peer connection should renegotiate")
-        Task {
-            defer {
-                isMakingOffer = false
-            }
-            
-            do {
-                isMakingOffer = true
-                try await peerConnection.setLocalDescription()
-                try await sendDescription(peerConnection.localDescription!)
-            } catch {
-                EdgeLogger.error("Renegotiation failed to create and send a local description: \(error)")
-            }
-            
-            isMakingOffer = false
-        }
+        EdgeLogger.info("\(peerName) renegotiation needed!")
+        // Forward to PerfectNegotiator
+        perfectNegotiator?.onRenegotiationNeeded()
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        EdgeLogger.info("ICE connection state changed to: \((try? newState.description()) ?? "invalid RTCIceConnectionState")")
-        if newState == .closed {
-            self.onClosed?()
-        }
+        EdgeLogger.info("\(peerName) ice connection state changed to \(newState)")
+        // Forward to PerfectNegotiator
+        perfectNegotiator?.onIceConnectionChange(state: newState)
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-        EdgeLogger.info("ICE gathering state changed to: \((try? newState.description()) ?? "invalid RTCIceGatheringState")")
+        EdgeLogger.info("\(peerName) ice gathering state changed to \(newState)")
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        EdgeLogger.info("New ICE candidate generated: \(candidate.sdp)")
-        Task {
-            await signaling.send(SignalMessage(
-                type: .iceCandidate,
-                data: candidate.toJSON()
-            ))
-        }
+        EdgeLogger.info("\(peerName) added ice candidate \(candidate)")
+        // Forward to PerfectNegotiator
+        perfectNegotiator?.onIceCandidate(candidate: candidate)
     }
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
-        EdgeLogger.info("ICE candidate removed")
+        EdgeLogger.info("\(peerName) removed ice candidates \(candidates)")
     }
     
-    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen candidate: RTCDataChannel) {
-        EdgeLogger.info("Data channel \(candidate.channelId) opened")
+    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
+        EdgeLogger.info("\(peerName) opened data channel \(dataChannel)")
     }
 }

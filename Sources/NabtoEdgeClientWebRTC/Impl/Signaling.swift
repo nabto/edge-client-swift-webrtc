@@ -17,6 +17,12 @@ public struct TurnServer: Codable {
     let password: String
 }
 
+public struct IceServer: Codable {
+    let urls: [String]
+    var username: String? = nil
+    var credential: String? = nil
+}
+
 public struct IceCandidate: Codable {
     let candidate: String
     let sdpMid: String
@@ -47,6 +53,7 @@ public struct SignalMessage: Codable {
     let type: SignalMessageType
     var data: String? = nil
     var servers: [TurnServer]? = nil
+    var iceServers: [IceServer]? = nil
     var metadata: SignalMessageMetadata? = nil
 }
 
@@ -58,28 +65,34 @@ public struct SDP: Codable {
 public protocol EdgeSignaling {
     func send(_ msg: SignalMessage) async
     func recv() async throws -> SignalMessage
+    func start() async throws
     func close() async
 }
 
-public protocol SignalingStream {
-    func closeAsync() async throws
-    func readAllAsync(length: Int) async throws -> Data
-    func writeAsync(data: Data) async throws
+fileprivate struct RTCInfo: Codable {
+    let signalingStreamPort: UInt32
+
+    enum CodingKeys: String, CodingKey {
+        case signalingStreamPort = "SignalingStreamPort"
+    }
 }
 
-extension NabtoEdgeClient.Stream : SignalingStream {}
-
-// @TODO: Catch and convert errors to our own type of errors?
 public class EdgeStreamSignaling: EdgeSignaling {
-    private let stream: SignalingStream!
+    private let connection: Connection
+    private var stream: NabtoEdgeClient.Stream! = nil
     private let messageChannel = AsyncChannel<SignalMessage>()
 
     private let cborDecoder = CBORDecoder()
     private let jsonEncoder = JSONEncoder()
     private let jsonDecoder = JSONDecoder()
 
-    public init(_ stream: SignalingStream) async throws {
-        self.stream = stream
+    public init(_ connection: Connection) {
+        self.connection = connection
+    }
+    
+    public func start() async throws {
+        try await connectSignalingStream()
+        
         Task {
             for await msg in messageChannel {
                 do {
@@ -133,5 +146,31 @@ public class EdgeStreamSignaling: EdgeSignaling {
         data.append(encoded)
 
         try await stream.writeAsync(data: data)
+    }
+    
+    private func connectSignalingStream() async throws {
+        let webrtcInfoCoap = try connection.createCoapRequest(method: "GET", path: "/p2p/webrtc-info")
+        let coapResult = try await webrtcInfoCoap.executeAsync()
+        
+        if coapResult.status != 205 {
+            EdgeLogger.error("Unexpected /p2p/webrtc-info return code \(coapResult.status). Failed to initialize signaling service.")
+            throw EdgeWebrtcError.signalingFailedToInitialize
+        }
+        
+        var rtcInfo: RTCInfo
+        
+        let cborDecoder = CBORDecoder()
+        let jsonDecoder = JSONDecoder()
+        if coapResult.contentFormat == 50 {
+            rtcInfo = try jsonDecoder.decode(RTCInfo.self, from: coapResult.payload)
+        } else if coapResult.contentFormat == 60 {
+            rtcInfo = try cborDecoder.decode(RTCInfo.self, from: coapResult.payload)
+        } else {
+            EdgeLogger.error("/p2p/webrtc-info returned invalid content format \(String(describing: coapResult.contentFormat))")
+            throw EdgeWebrtcError.signalingFailedToInitialize
+        }
+        
+        stream = try connection.createStream()
+        try await stream.openAsync(streamPort: rtcInfo.signalingStreamPort)
     }
 }
