@@ -260,7 +260,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         // @TODO: call reject(signalingFailedToSend) when this fails (need to change signaling API to throw errors)
         await signaling?.send(SignalMessage(type: .turnRequest))
         
-        while true {
+        while !Task.isCancelled {
             var msg: SignalMessage? = nil
             do {
                 msg = try await signaling?.recv()
