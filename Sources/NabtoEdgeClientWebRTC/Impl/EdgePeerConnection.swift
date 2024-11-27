@@ -427,7 +427,7 @@ extension EdgePeerConnectionImpl: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         EdgeLogger.info("New ICE candidate generated: \(candidate.sdp)")
         Task {
-            await signaling.send(SignalMessage(
+            await signaling?.send(SignalMessage(
                 type: .iceCandidate,
                 data: candidate.toJSON()
             ))
