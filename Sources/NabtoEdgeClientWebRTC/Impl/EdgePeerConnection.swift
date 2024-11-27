@@ -24,7 +24,8 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     var onTrack: EdgeOnTrackCallback? = nil
     var onError: EdgeOnErrorCallback? = nil
     
-    private var signaling: EdgeSignaling!
+    private var loopTask: Task<(), Error>? = nil
+    private var signaling: EdgeSignaling? = nil
     private var receivedMetadata: [String: SignalMessageMetadataTrack] = [:]
     
     private var peerConnection: RTCPeerConnection?
@@ -41,9 +42,18 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         self.conn = conn
     }
     
+    deinit {
+        loopTask?.cancel()
+        peerConnection?.close()
+        
+        self.peerConnection = nil
+        self.loopTask = nil
+        self.conn = nil
+    }
+    
     func connect() async throws {
         try await withUnsafeThrowingContinuation { continuation in
-            Task {
+            loopTask = Task {
                 guard let conn = conn else {
                     EdgeLogger.error("Nabto connection is nil. Failed to establish WebRTC connection.")
                     throw EdgeWebrtcError.signalingFailedToInitialize
@@ -81,8 +91,13 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     }
     
     func close() async {
-        await signaling.close()
+        await signaling?.close()
+        loopTask?.cancel()
         peerConnection?.close()
+        
+        self.signaling = nil
+        self.peerConnection = nil
+        self.loopTask = nil
         self.conn = nil
     }
     
@@ -134,7 +149,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
     private func sendDescription(_ description: RTCSessionDescription) async throws {
         let type = description.type == .answer ? SignalMessageType.answer : SignalMessageType.offer
         let msg = SignalMessage(type: type, data: description.toJSON(), metadata: createMetadata())
-        await signaling.send(msg)
+        await signaling?.send(msg)
     }
     
     private func createMetadata() -> SignalMessageMetadata {
@@ -243,12 +258,12 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         }
         
         // @TODO: call reject(signalingFailedToSend) when this fails (need to change signaling API to throw errors)
-        await signaling.send(SignalMessage(type: .turnRequest))
+        await signaling?.send(SignalMessage(type: .turnRequest))
         
         while true {
             var msg: SignalMessage? = nil
             do {
-                msg = try await signaling.recv()
+                msg = try await signaling?.recv()
             } catch NabtoEdgeClientError.EOF {
                 EdgeLogger.info("Signaling stream is EOF! Closing message loop.")
                 reject(EdgeWebrtcError.signalingFailedRecv)
