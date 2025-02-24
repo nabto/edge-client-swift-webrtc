@@ -10,6 +10,8 @@ import OSLog
 import WebRTC
 
 internal class EdgeLogger {
+    fileprivate static var nsLogLoggingEnabled = false
+
     fileprivate static var logger: InternalLogger = {
         let logLevel = EdgeWebrtcLogLevel.error
         if #available(iOS 14.0, OSX 11.0, *) {
@@ -19,6 +21,10 @@ internal class EdgeLogger {
         }
     }()
     
+    static func enableNsLogLogging() {
+        self.nsLogLoggingEnabled = true
+    }
+
     static func setLogLevel(_ level: EdgeWebrtcLogLevel) {
         if level == .verbose {
             // activate internal webrtc logging for verbose
@@ -60,6 +66,10 @@ fileprivate class SwiftLogger: InternalLogger {
     }
     
     func log(_ msgLevel: EdgeWebrtcLogLevel, _ msg: String) {
+        if EdgeLogger.nsLogLoggingEnabled {
+            NSLog("EdgeWebRTC: %@", msg)
+            return
+        }
         if msgLevel.rawValue <= logLevel.rawValue {
             switch msgLevel {
             case .verbose:
@@ -84,6 +94,10 @@ fileprivate class CompatLogger: InternalLogger {
     
     func log(_ msgLevel: EdgeWebrtcLogLevel, _ msg: String) {
         if msgLevel.rawValue <= logLevel.rawValue {
+            if EdgeLogger.nsLogLoggingEnabled {
+                NSLog("EdgeWebRTC: %@", msg)
+                return
+            }
             switch msgLevel {
             case .verbose:
                 os_log("EdgeWebRTC: %@", log: .default, type: .debug, msg)

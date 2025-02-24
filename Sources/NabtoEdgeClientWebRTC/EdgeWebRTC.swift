@@ -42,6 +42,13 @@ public class EdgeWebrtc {
     }
 
     /**
+     * Log using NSLog. Less performant but useful in some scenarios.
+     */
+    public static func enableNsLogLogging() {
+        EdgeLogger.enableNsLogLogging()
+    }
+
+    /**
      * Create a new WebRTC connection instance using a pre-existing Nabto Edge Connection for signaling.
      *
      * Only one WebRTC connection can exist on a Nabto Edge Connection at a time.
