@@ -63,13 +63,13 @@ fileprivate class SwiftLogger: InternalLogger {
         if msgLevel.rawValue <= logLevel.rawValue {
             switch msgLevel {
             case .verbose:
-                logger.debug("\(msg)")
+                logger.debug("EdgeWebRTC: \(msg)")
             case .error:
-                logger.error("\(msg)")
+                logger.error("EdgeWebRTC: \(msg)")
             case .warning:
-                logger.warning("\(msg)")
+                logger.warning("EdgeWebRTC: \(msg)")
             case .info:
-                logger.info("\(msg)")
+                logger.info("EdgeWebRTC: \(msg)")
             }
         }
     }
@@ -86,13 +86,13 @@ fileprivate class CompatLogger: InternalLogger {
         if msgLevel.rawValue <= logLevel.rawValue {
             switch msgLevel {
             case .verbose:
-                os_log("%@", log: .default, type: .debug, msg)
+                os_log("EdgeWebRTC: %@", log: .default, type: .debug, msg)
             case .error:
-                os_log("%@", log: .default, type: .error, msg)
+                os_log("EdgeWebRTC: %@", log: .default, type: .error, msg)
             case .warning:
-                os_log("%@", log: .default, type: .error, msg)
+                os_log("EdgeWebRTC: %@", log: .default, type: .error, msg)
             case .info:
-                os_log("%@", log: .default, type: .info, msg)
+                os_log("EdgeWebRTC: %@", log: .default, type: .info, msg)
             }
         }
     }
