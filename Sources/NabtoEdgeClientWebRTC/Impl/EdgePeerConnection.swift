@@ -118,6 +118,7 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         
         peerConnection = peerConnectionFactory.peerConnection(with: config, constraints: constraints, delegate: self)
+        perfectNegotiator = PerfectNegotiator(signaling: signaling, peerConnection: peerConnection!, polite: false)
     }
     
     private func error(_ err: EdgeWebrtcError, _ msg: String?) {
