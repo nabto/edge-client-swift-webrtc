@@ -217,6 +217,8 @@ public protocol EdgePeerConnection {
      */
     func addTrack(_ track: EdgeMediaTrack, streamIds: [String]) throws
 
+    func getPeerConnection() -> RTCPeerConnection?
+
     /**
      * Establish a WebRTC connection to the other peer
      *
