@@ -51,9 +51,9 @@ internal class EdgePeerConnectionImpl: NSObject, EdgePeerConnection {
         self.conn = nil
     }
 
-  func getPeerConnection() -> RTCPeerConnection? {
-    return self.peerConnection
-  }
+    func getPeerConnection() -> RTCPeerConnection? {
+        return self.peerConnection
+    }
 
     func connect() async throws {
         try await withUnsafeThrowingContinuation { continuation in

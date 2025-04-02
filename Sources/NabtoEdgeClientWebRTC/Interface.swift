@@ -217,6 +217,9 @@ public protocol EdgePeerConnection {
      */
     func addTrack(_ track: EdgeMediaTrack, streamIds: [String]) throws
 
+    /**
+     * Access the underlying RTCPeerConnection object.
+     */
     func getPeerConnection() -> RTCPeerConnection?
 
     /**
