@@ -16,7 +16,7 @@ let package = Package(
             targets: ["NabtoEdgeClientWebRTC"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/stasel/WebRTC.git", .upToNextMajor(from: "120.0.0")),
+        .package(url: "https://github.com/stasel/WebRTC.git", .upToNextMajor(from: "156.0.0")),
         .package(url: "https://github.com/nabto/edge-client-swift.git", from: "4.0.2"),
         .package(url: "https://github.com/apple/swift-async-algorithms", from: "0.1.0")
     ],
