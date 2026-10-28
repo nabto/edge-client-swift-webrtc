@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build and test (iOS Simulator)
+        run: |
+          xcrun simctl list devices available
+          UDID=$(xcrun simctl list devices available iPhone | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}' | head -1)
+          if [ -n "$UDID" ]; then
+            xcodebuild test \
+              -scheme NabtoEdgeClientWebRTC \
+              -destination "platform=iOS Simulator,id=$UDID" \
+              -derivedDataPath .build \
+              -skipPackagePluginValidation
+          else
+            echo "No iPhone simulator available, building tests without running them"
+            xcodebuild build-for-testing \
+              -scheme NabtoEdgeClientWebRTC \
+              -destination 'generic/platform=iOS Simulator' \
+              -derivedDataPath .build \
+              -skipPackagePluginValidation
+          fi
