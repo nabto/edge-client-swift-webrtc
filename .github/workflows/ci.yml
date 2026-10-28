@@ -20,8 +20,19 @@ jobs:
 
       - name: Build and test (iOS Simulator)
         run: |
-          xcodebuild test \
-            -scheme NabtoEdgeClientWebRTC \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
-            -derivedDataPath .build \
-            -skipPackagePluginValidation
+          xcrun simctl list devices available
+          UDID=$(xcrun simctl list devices available iPhone | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}' | head -1)
+          if [ -n "$UDID" ]; then
+            xcodebuild test \
+              -scheme NabtoEdgeClientWebRTC \
+              -destination "platform=iOS Simulator,id=$UDID" \
+              -derivedDataPath .build \
+              -skipPackagePluginValidation
+          else
+            echo "No iPhone simulator available, building tests without running them"
+            xcodebuild build-for-testing \
+              -scheme NabtoEdgeClientWebRTC \
+              -destination 'generic/platform=iOS Simulator' \
+              -derivedDataPath .build \
+              -skipPackagePluginValidation
+          fi
